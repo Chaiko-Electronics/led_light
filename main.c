@@ -1,4 +1,4 @@
-#define F_CPU 9600000
+#define F_CPU 1000
 
 #include <avr/io.h>
 #include <util/delay.h>
@@ -14,10 +14,10 @@
 #define MAX 250
 #define STEPS 16.0
 
+volatile uint8_t lastState = 0;
+const int8_t increment[16] = {0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0};
 
-volatile int brightness = 0;
-volatile uint8_t a0;
-volatile uint8_t c0;
+volatile int8_t brightness = 0;
 
 void sleep() {
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
@@ -44,19 +44,10 @@ void pwm_setup (void)
 }
 
 void check_encoder() {
-	uint8_t a = PINB>>ENC1 & 1;
-	uint8_t b = PINB>>ENC2 & 1;
-	if (a != a0) {              // A changed
-		a0 = a;
-		if (b != c0) {
-			c0 = b;
-			if(a == b) {
-		  		brightness++;
-			}
-			else {
-				brightness--;
-			}
-		}
+	uint8_t state = (PINB & (1 << ENC1)) | (PINB & (1 << ENC2)) << 1;
+	if (state != lastState) {
+		brightness += increment[state | (lastState << 2)];
+		lastState = state;
 	}
 
 	if(brightness > STEPS) brightness = STEPS;
@@ -69,13 +60,13 @@ int main() {
 	PORTB &= ~_BV(LED1) &  ~_BV(LED2);
 
 	pwm_setup();
-	PCMSK = (1 << ENC1); // set pin change mask
+	PCMSK = (1 << ENCB); // set pin change mask
 	GIMSK = (1 << PCIE); // enable pin change interrupt
 	sleep();
 	OCR0B = 0;
 
  while (1) {
-
+ 	check_encoder();
  	//int b1 = ((brightness - 8) < 0) ? 0 : brightness - 7;
  	//int b2 = (brightness < 7) ? brightness : 7;
 
@@ -96,6 +87,8 @@ int main() {
 
 ISR(PCINT0_vect) {
 	cli();
-	check_encoder();
+	brightness=0;
+	OCR0A = 0;
+	OCR0B = 0;
 	sei();
 }
